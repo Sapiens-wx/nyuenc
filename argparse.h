@@ -15,7 +15,7 @@ void arg_parse(int argc, char* argv[])
 {
     argument.files_cnt=0;
     argument.jobs=1;
-    for(int i=0;i<argc;++i){
+    for(int i=1;i<argc;++i){
         if(strcmp("-j", argv[i])==0){ // set jobs
             if(i+1>=argc || sscanf(argv[i+1], "%d", &argument.jobs)==0){
                 argument.jobs=1;
