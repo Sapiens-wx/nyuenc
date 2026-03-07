@@ -17,6 +17,25 @@ static int sum_of_array(const int arr[], int arr_len){
     return sum;
 }
 
+/// @brief encode a given chunk into out_encoded. out_encoded should be allocated by caller
+/// @param out_size actual used size of out_encoded
+static void encode_internal(const uint8_t* chunk, const int size, uint8_t* out_encoded, int* out_size){
+    uint8_t cur_val=chunk[0];
+    uint8_t cur_cnt=1;
+    int out_encoded_len=0;
+    for(int i=1;i<size;++i){
+        if(chunk[i]==cur_val){ // duplicate value
+            ++cur_cnt;
+        } else{ // encounters a new value. encode the previous value
+            write_encoded_value(cur_val, cur_cnt, out_encoded, &out_encoded_len);
+            cur_val=chunk[i];
+            cur_cnt=1;
+        }
+    }
+    write_encoded_value(cur_val, cur_cnt, out_encoded, &out_encoded_len);
+    *out_size=out_encoded_len;
+}
+
 /// @brief encodes [chunk] into [out_encoded]
 /// @param chunk pointer to the data to be encoded
 /// @param size size of the data
@@ -30,18 +49,7 @@ void encode(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* ou
     }
     uint8_t* buffer=(uint8_t*)malloc(sizeof(uint8_t)*size);
     int buffer_len=0;
-    uint8_t cur_val=chunk[0];
-    uint8_t cur_cnt=1;
-    for(int i=1;i<size;++i){
-        if(chunk[i]==cur_val){ // duplicate value
-            ++cur_cnt;
-        } else{ // encounters a new value. encode the previous value
-            write_encoded_value(cur_val, cur_cnt, buffer, &buffer_len);
-            cur_val=chunk[i];
-            cur_cnt=1;
-        }
-    }
-    write_encoded_value(cur_val, cur_cnt, buffer, &buffer_len);
+    encode_internal(chunk, size, buffer, &buffer_len);
 
     // output value
     *out_encoded=buffer;
