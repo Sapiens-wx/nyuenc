@@ -8,10 +8,14 @@
 #include "argparse.h"
 #include "test.h"
 #include "file_reader.h"
+#include "jobs.h"
 
 int main(int argc, char* argv[]){
 	// parse arguments
 	arg_parse(argc, argv);
+
+	// init scheduler for thread pool
+	scheduler_init();
 
 	// read files into a single buffer
 	size_t buffer_size=0;
@@ -25,5 +29,6 @@ int main(int argc, char* argv[]){
 	char* encoded_str = encoded_to_str(encoded, encoded_size);
 	printf("encoded:\n%s\n", encoded_str);
 
+	scheduler_destroy();
 	return 0;
 }
