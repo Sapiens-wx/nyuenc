@@ -66,8 +66,11 @@ void scheduler_destroy(){
 
     // free memory
     free(scheduler.workers);
-    for(Job* job=scheduler.jobs_head; job; job=job->next)
+    for(Job* job=scheduler.jobs_head; job; ){
+        Job* next=job->next;
         free(job);
+        job=next;
+    }
 
     sem_destroy(&scheduler.sem_jobs);
     sem_destroy(&scheduler.mutex_jobs);
