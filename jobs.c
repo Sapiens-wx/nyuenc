@@ -9,6 +9,7 @@ typedef struct Scheduler{
     sem_t sem_jobs; // number of jobs
     sem_t mutex_jobs; // used for inserting or removing jobs
     int is_running;
+    int is_pushing_batch;
 
     pthread_t* workers;
     int num_workers;
@@ -39,6 +40,7 @@ static void* event_loop(void* arg){
 }
 
 void scheduler_init(){
+    scheduler.is_pushing_batch=0;
     sem_init(&scheduler.sem_jobs, 0, 0);
     sem_init(&scheduler.mutex_jobs, 0, 1);
     scheduler.jobs_head=(Job*)malloc(sizeof(Job));
@@ -76,10 +78,22 @@ void scheduler_job_push(Fn fn, void* arg){
     Job* job=(Job*)malloc(sizeof(Job));
     *job=(Job){fn, arg, NULL};
     // push job
-    sem_wait(&scheduler.mutex_jobs);
+    if(scheduler.is_pushing_batch==0)
+        sem_wait(&scheduler.mutex_jobs);
     scheduler.jobs_tail->next=job;
     scheduler.jobs_tail=job;
-    sem_post(&scheduler.mutex_jobs);
+    if(scheduler.is_pushing_batch==0)
+        sem_post(&scheduler.mutex_jobs);
     // post sem_jobs
     sem_post(&scheduler.sem_jobs);
+}
+
+void scheduler_begin_push_batch(){
+    sem_wait(&scheduler.mutex_jobs);
+    scheduler.is_pushing_batch=1;
+}
+
+void scheduler_end_push_batch(){
+    scheduler.is_pushing_batch=0;
+    sem_post(&scheduler.mutex_jobs);
 }

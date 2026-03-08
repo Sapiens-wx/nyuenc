@@ -27,7 +27,7 @@ int main(int argc, char* argv[]){
 	encode_multithread(buffer, (int)buffer_size, &encoded, &encoded_size);
 
 	// writes to stdout
-	write(STDIN_FILENO, encoded, encoded_size);
+	write(STDOUT_FILENO, encoded, encoded_size);
 	/* debug
 	char* encoded_str = encoded_to_str(encoded, encoded_size);
 	printf("encoded:\n%s\n", encoded_str);

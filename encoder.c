@@ -120,11 +120,9 @@ static void encode_multithread_worker(void* arg_void){
     EncodeMultithreadArg* arg=(EncodeMultithreadArg*)arg_void;
     encode(arg->chunk, arg->size, arg->out_encoded, arg->out_size);
     sem_post(arg->sem);
-    free(arg);
 }
 
-void encode_multithread(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size){
-    int num_batches=argument.jobs;
+static void encode_batch_multithread(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size, int num_batches){
     int batch_size=size/num_batches;
 
     uint8_t** out_encoded_chunks=(uint8_t**)malloc(sizeof(uint8_t*)*num_batches);
@@ -133,14 +131,18 @@ void encode_multithread(const uint8_t* chunk, const int size, uint8_t** out_enco
     sem_t sem_tasks_done;
     sem_init(&sem_tasks_done, 0, 0);
 
+    EncodeMultithreadArg* args=(EncodeMultithreadArg*)malloc(sizeof(EncodeMultithreadArg)*num_batches);
     for(int i=0;i<num_batches;++i){
         const uint8_t* batch_chunk=chunk+i*batch_size;
         int actual_batch_size=i==num_batches-1?size-batch_size*i:batch_size;
-        EncodeMultithreadArg* arg=(EncodeMultithreadArg*)malloc(sizeof(EncodeMultithreadArg));
-        *arg=(EncodeMultithreadArg){batch_chunk, actual_batch_size,
+        args[i]=(EncodeMultithreadArg){batch_chunk, actual_batch_size,
             &out_encoded_chunks[i], &out_encoded_chunk_len[i], &sem_tasks_done};
-        scheduler_job_push(encode_multithread_worker, arg);
     }
+    scheduler_begin_push_batch();
+    for(int i=0;i<num_batches;++i){
+        scheduler_job_push(encode_multithread_worker, &args[i]);
+    }
+    scheduler_end_push_batch();
 
     // wait for async tasks to finish
     for(int i=0;i<num_batches;++i)
@@ -154,8 +156,19 @@ void encode_multithread(const uint8_t* chunk, const int size, uint8_t** out_enco
     *out_size=encoded_size;
 
     // free resources
+    free(args);
     for(int i=0;i<num_batches;++i)
         free(out_encoded_chunks[i]);
     free(out_encoded_chunks);
     free(out_encoded_chunk_len);
+}
+
+void encode_multithread(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size){
+    int num_batches=argument.jobs;
+    encode_batch_multithread(chunk, size, out_encoded, out_size, num_batches);
+}
+
+void encode_multithread_fixed_batch_size(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size, int batch_size){
+    int num_batches=(size+batch_size-1)/batch_size;
+    encode_batch_multithread(chunk, size, out_encoded, out_size, num_batches);
 }
