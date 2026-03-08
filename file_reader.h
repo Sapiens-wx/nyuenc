@@ -60,18 +60,24 @@ static void read_to_buffer(const char* path, uint8_t* buffer, size_t max_size){
 
 #endif
 
+/// @brief reads all files into a single buffer
+/// @param out_buffer_size 
+/// @return a pointer to the buffer. NULL if no files are given or if all files are of size 0
 uint8_t* file_read_from_argument(size_t* out_buffer_size)
 #ifndef FILE_READER_IMPLEMENTATION
 ;
 #else
 {
+    if(argument.files_cnt==0) return NULL;
     size_t* file_sizes=get_file_sizes();
     uint8_t** data_ptrs;
     uint8_t* buffer=allocate_buffer(file_sizes, &data_ptrs);
     for(int i=0;i<argument.files_cnt;++i){
-        read_to_buffer(argument.files[i], data_ptrs[i], file_sizes[i]);
+        if(file_sizes[i]>0)
+            read_to_buffer(argument.files[i], data_ptrs[i], file_sizes[i]);
     }
     *out_buffer_size=sum_of_sizet_array(file_sizes, argument.files_cnt);
+    if(*out_buffer_size==0) return NULL;
 
     // free resources
     free(file_sizes);

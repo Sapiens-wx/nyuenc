@@ -20,6 +20,7 @@ int main(int argc, char* argv[]){
 	// read files into a single buffer
 	size_t buffer_size=0;
 	uint8_t* buffer=file_read_from_argument(&buffer_size);
+	if(buffer==NULL) return 0;
 
 	// encode
 	uint8_t* encoded;
