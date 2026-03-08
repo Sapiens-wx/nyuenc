@@ -46,7 +46,7 @@ static uint8_t* allocate_buffer(const size_t* file_sizes, uint8_t*** out_data_pt
 static void read_to_buffer(const char* path, uint8_t* buffer, size_t max_size){
     int fd = open(path, O_RDONLY);
     if (fd == -1) {
-        perror("error when opening file");
+        perror(path);
         return;
     }
     size_t bytes_read;

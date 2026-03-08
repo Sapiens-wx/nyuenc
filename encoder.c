@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include "argparse.h"
+#include "jobs.h"
 
 static void write_encoded_value(uint8_t val, uint8_t cnt, uint8_t* buffer, int* len){
     int buffer_len=*len;
@@ -101,4 +105,57 @@ char* encoded_to_str(const uint8_t* encoded, int len){
         str_it+=snprintf(str_it, 4, "%d", encoded[i+1]);
     }
     return str;
+}
+
+// ====encode with multi thread=====
+typedef struct EncodeMultithreadArg{
+    const uint8_t* chunk;
+    int size;
+    uint8_t** out_encoded;
+    int* out_size;
+    sem_t* sem;
+}EncodeMultithreadArg;
+
+static void encode_multithread_worker(void* arg_void){
+    EncodeMultithreadArg* arg=(EncodeMultithreadArg*)arg_void;
+    encode(arg->chunk, arg->size, arg->out_encoded, arg->out_size);
+    sem_post(arg->sem);
+    free(arg);
+}
+
+void encode_multithread(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size){
+    int num_batches=argument.jobs;
+    int batch_size=size/num_batches;
+
+    uint8_t** out_encoded_chunks=(uint8_t**)malloc(sizeof(uint8_t*)*num_batches);
+    int* out_encoded_chunk_len=(int*)malloc(sizeof(int)*num_batches);
+
+    sem_t sem_tasks_done;
+    sem_init(&sem_tasks_done, 0, 0);
+
+    for(int i=0;i<num_batches;++i){
+        const uint8_t* batch_chunk=chunk+i*batch_size;
+        int actual_batch_size=i==num_batches-1?size-batch_size*i:batch_size;
+        EncodeMultithreadArg* arg=(EncodeMultithreadArg*)malloc(sizeof(EncodeMultithreadArg));
+        *arg=(EncodeMultithreadArg){batch_chunk, actual_batch_size,
+            &out_encoded_chunks[i], &out_encoded_chunk_len[i], &sem_tasks_done};
+        scheduler_job_push(encode_multithread_worker, arg);
+    }
+
+    // wait for async tasks to finish
+    for(int i=0;i<num_batches;++i)
+        sem_wait(&sem_tasks_done);
+    sem_destroy(&sem_tasks_done);
+
+    uint8_t* encoded;
+    int encoded_size;
+    encode_combine_encoded_chunks(out_encoded_chunks, out_encoded_chunk_len, num_batches, &encoded, &encoded_size);
+    *out_encoded=encoded;
+    *out_size=encoded_size;
+
+    // free resources
+    for(int i=0;i<num_batches;++i)
+        free(out_encoded_chunks[i]);
+    free(out_encoded_chunks);
+    free(out_encoded_chunk_len);
 }

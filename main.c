@@ -24,10 +24,14 @@ int main(int argc, char* argv[]){
 	// encode
 	uint8_t* encoded;
 	int encoded_size;
-	encode(buffer, (int)buffer_size, &encoded, &encoded_size);
+	encode_multithread(buffer, (int)buffer_size, &encoded, &encoded_size);
 
+	// writes to stdout
+	write(STDIN_FILENO, encoded, encoded_size);
+	/* debug
 	char* encoded_str = encoded_to_str(encoded, encoded_size);
 	printf("encoded:\n%s\n", encoded_str);
+	*/
 
 	scheduler_destroy();
 	return 0;
