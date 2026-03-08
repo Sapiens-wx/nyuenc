@@ -21,7 +21,7 @@ static size_t* get_file_sizes(){
     for(int i=0;i<argument.files_cnt;++i){
         struct stat st;
         stat(argument.files[i], &st);
-        file_sizes[i]=st.st_size-1; // -1 to ignore the terminating \n char
+        file_sizes[i]=st.st_size; // -1 to ignore the terminating \n char
     }
     return file_sizes;
 }
