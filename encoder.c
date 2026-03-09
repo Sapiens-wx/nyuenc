@@ -51,7 +51,7 @@ void encode(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* ou
         *out_size=0;
         return;
     }
-    uint8_t* buffer=(uint8_t*)malloc(sizeof(uint8_t)*size);
+    uint8_t* buffer=(uint8_t*)malloc(sizeof(uint8_t)*size*2);
     int buffer_len=0;
     encode_internal(chunk, size, buffer, &buffer_len);
 

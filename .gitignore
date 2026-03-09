@@ -1,3 +1,4 @@
 nyuenc
 *.o
 *.sh
+nyuenc-autograder/
