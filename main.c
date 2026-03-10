@@ -26,6 +26,7 @@ int main(int argc, char* argv[]){
 	uint8_t* encoded;
 	int encoded_size;
 	encode_multithread(buffer, (int)buffer_size, &encoded, &encoded_size);
+	//encode_multithread_fixed_batch_size(buffer, (int)buffer_size, &encoded, &encoded_size, 1024);
 
 	// writes to stdout
 	write(STDOUT_FILENO, encoded, encoded_size);

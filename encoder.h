@@ -8,3 +8,4 @@ void encode_combine_encoded_chunks(uint8_t* const chunks[], const int chunk_len[
 char* encoded_to_str(const uint8_t* encoded, int len);
 
 void encode_multithread(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size);
+void encode_multithread_fixed_batch_size(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size, int batch_size);

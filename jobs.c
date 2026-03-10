@@ -8,6 +8,7 @@ typedef struct Scheduler{
     Job* jobs_head, *jobs_tail;
     sem_t sem_jobs; // number of jobs
     sem_t mutex_jobs; // used for inserting or removing jobs
+    sem_t mutex_is_running;
     int is_running;
     int is_pushing_batch;
 
@@ -16,6 +17,20 @@ typedef struct Scheduler{
 } Scheduler;
 
 static Scheduler scheduler;
+
+static void scheduler_set_is_running(int val){
+    sem_wait(&scheduler.mutex_is_running);
+    scheduler.is_running=val;
+    sem_post(&scheduler.mutex_is_running);
+}
+
+static int scheduler_get_is_running(){
+    int val;
+    sem_wait(&scheduler.mutex_is_running);
+    val=scheduler.is_running;
+    sem_post(&scheduler.mutex_is_running);
+    return val;
+}
 
 static Job* scheduler_job_pop(){
     Job* job=NULL;
@@ -30,7 +45,7 @@ static Job* scheduler_job_pop(){
 
 static void* event_loop(void* arg){
     arg=(char*)arg+1; // avoid unused params
-    while(scheduler.is_running){
+    while(scheduler_get_is_running()){
         sem_wait(&scheduler.sem_jobs);
         Job* job=scheduler_job_pop();
         if(job)
@@ -43,11 +58,12 @@ void scheduler_init(){
     scheduler.is_pushing_batch=0;
     sem_init(&scheduler.sem_jobs, 0, 0);
     sem_init(&scheduler.mutex_jobs, 0, 1);
+    sem_init(&scheduler.mutex_is_running, 0, 1);
     scheduler.jobs_head=(Job*)malloc(sizeof(Job));
     *scheduler.jobs_head=(Job){NULL, NULL, NULL};
     scheduler.jobs_tail=scheduler.jobs_head;
     // start the workers
-    scheduler.is_running=1;
+    scheduler_set_is_running(1);
     scheduler.num_workers=argument.jobs;
     scheduler.workers=(pthread_t*)malloc(sizeof(pthread_t)*scheduler.num_workers);
     for(int i=0;i<scheduler.num_workers;++i){
@@ -56,7 +72,7 @@ void scheduler_init(){
 }
 
 void scheduler_destroy(){
-    scheduler.is_running=0;
+    scheduler_set_is_running(0);
     for(int i=0;i<scheduler.num_workers;++i)
         sem_post(&scheduler.sem_jobs);
     // wait for workers to terminate
@@ -74,6 +90,7 @@ void scheduler_destroy(){
 
     sem_destroy(&scheduler.sem_jobs);
     sem_destroy(&scheduler.mutex_jobs);
+    sem_destroy(&scheduler.mutex_is_running);
 }
 
 void scheduler_job_push(Fn fn, void* arg){

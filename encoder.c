@@ -128,15 +128,15 @@ static void encode_batch_multithread(const uint8_t* chunk, const int size, uint8
     uint8_t** out_encoded_chunks=(uint8_t**)malloc(sizeof(uint8_t*)*num_batches);
     int* out_encoded_chunk_len=(int*)malloc(sizeof(int)*num_batches);
 
-    sem_t sem_tasks_done;
-    sem_init(&sem_tasks_done, 0, 0);
+    sem_t* sem_tasks_done=(sem_t*)malloc(sizeof(sem_t));
+    sem_init(sem_tasks_done, 0, 0);
 
     EncodeMultithreadArg* args=(EncodeMultithreadArg*)malloc(sizeof(EncodeMultithreadArg)*num_batches);
     for(int i=0;i<num_batches;++i){
         const uint8_t* batch_chunk=chunk+i*batch_size;
         int actual_batch_size=i==num_batches-1?size-batch_size*i:batch_size;
         args[i]=(EncodeMultithreadArg){batch_chunk, actual_batch_size,
-            &out_encoded_chunks[i], &out_encoded_chunk_len[i], &sem_tasks_done};
+            &out_encoded_chunks[i], &out_encoded_chunk_len[i], sem_tasks_done};
     }
     scheduler_begin_push_batch();
     for(int i=0;i<num_batches;++i){
@@ -146,8 +146,7 @@ static void encode_batch_multithread(const uint8_t* chunk, const int size, uint8
 
     // wait for async tasks to finish
     for(int i=0;i<num_batches;++i)
-        sem_wait(&sem_tasks_done);
-    sem_destroy(&sem_tasks_done);
+        sem_wait(sem_tasks_done);
 
     uint8_t* encoded;
     int encoded_size;
@@ -161,6 +160,8 @@ static void encode_batch_multithread(const uint8_t* chunk, const int size, uint8
         free(out_encoded_chunks[i]);
     free(out_encoded_chunks);
     free(out_encoded_chunk_len);
+    sem_destroy(sem_tasks_done);
+    free(sem_tasks_done);
 }
 
 void encode_multithread(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size){
