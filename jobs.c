@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "argparse.h"
 
 typedef struct Scheduler{
@@ -38,6 +39,8 @@ static Job* scheduler_job_pop(){
     if(scheduler.jobs_head->next!=NULL){
         job=scheduler.jobs_head->next;
         scheduler.jobs_head->next=job->next;
+        if(scheduler.jobs_head->next==NULL)
+            scheduler.jobs_tail=scheduler.jobs_head;
     }
     sem_post(&scheduler.mutex_jobs);
     return job;

@@ -10,6 +10,10 @@
 #include "file_reader.h"
 #include "jobs.h"
 
+void test(void* a){
+	a=(void*)((char*)a+1);
+}
+
 int main(int argc, char* argv[]){
 	// parse arguments
 	arg_parse(argc, argv);
@@ -19,21 +23,18 @@ int main(int argc, char* argv[]){
 
 	// read files into a single buffer
 	size_t buffer_size=0;
-	uint8_t* buffer=file_read_from_argument(&buffer_size);
-	if(buffer==NULL) return 0;
+	uint8_t* buffer=file_read_from_argument_multithread(&buffer_size);
 
-	// encode
-	uint8_t* encoded;
-	int encoded_size;
-	encode_multithread(buffer, (int)buffer_size, &encoded, &encoded_size);
-	//encode_multithread_fixed_batch_size(buffer, (int)buffer_size, &encoded, &encoded_size, 1024);
+	if(buffer!=NULL){
+		// encode
+		uint8_t* encoded;
+		int encoded_size;
+		encode_multithread(buffer, (int)buffer_size, &encoded, &encoded_size);
+		//encode_multithread_fixed_batch_size(buffer, (int)buffer_size, &encoded, &encoded_size, 1024);
 
-	// writes to stdout
-	write(STDOUT_FILENO, encoded, encoded_size);
-	/* debug
-	char* encoded_str = encoded_to_str(encoded, encoded_size);
-	printf("encoded:\n%s\n", encoded_str);
-	*/
+		// writes to stdout
+		write(STDOUT_FILENO, encoded, encoded_size);
+	}
 
 	scheduler_destroy();
 	return 0;
