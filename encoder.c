@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 700
 #include "encoder.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -236,4 +237,112 @@ void encode_write_uncombined_chunks(int fd, uint8_t*const* chunks, const int* ch
     }
     if(prev[1]>0)
         write(fd, prev, sizeof(prev));
+}
+
+typedef struct ChunkWriteInfo{
+    int offset;
+    // number of char of the [last char of previous]/[first char of next chunk] if they are the same with this chunk.
+    // e.g., chunks=[a3,a5,a2], prev_count=3, next_count=2. if 0, then no merging with the previous/next chunk
+    uint8_t prev_count;
+    uint8_t next_count;
+} ChunkWriteInfo;
+
+// update the variables of struct ChunkWriteInfo of a given chunk
+static void chunk_info_init(uint8_t*const* chunks, const int* chunk_lens, const int chunk_len, int idx, ChunkWriteInfo* chunk_infos){
+    if(idx>=chunk_len) return;
+    uint8_t* cur_chunk=chunks[idx];
+    ChunkWriteInfo* chunk_info=&chunk_infos[idx];
+    chunk_info->offset=0;
+    chunk_info->prev_count=0;
+    chunk_info->next_count=0;
+    if(idx>0){
+        uint8_t* prev_chunk=chunks[idx-1];
+        int prev_chunk_len=chunk_lens[idx-1];
+        chunk_info->offset=chunk_infos[idx-1].offset;
+        if(prev_chunk[prev_chunk_len-2]==cur_chunk[0]){
+            ChunkWriteInfo* prev_chunk_info=&chunk_infos[idx-1];
+            chunk_info->prev_count=prev_chunk[prev_chunk_len-1];
+            if(prev_chunk_len==2)
+                chunk_info->prev_count+=prev_chunk_info->prev_count;
+            prev_chunk_info->next_count=chunk_info->prev_count;
+            chunk_info->offset-=2;
+        }
+    }
+}
+static ChunkWriteInfo* get_chunk_infos(uint8_t*const* chunks, const int* chunk_lens, const int chunk_len){
+    ChunkWriteInfo* chunk_infos=(ChunkWriteInfo*)malloc(sizeof(ChunkWriteInfo)*chunk_len);
+    for(int i=0;i<chunk_len;++i){
+        chunk_info_init(chunks, chunk_lens, chunk_len, i, chunk_infos);
+    }
+    return chunk_infos;
+}
+
+typedef struct ChunkWriteArg{
+    const uint8_t* chunk;
+    ChunkWriteInfo* info;
+    sem_t* sem;
+    int fd;
+    int chunk_len;
+    int cumulative_len; // sum of the len of all previous chunks
+} ChunkWriteArg;
+
+static void encode_write_uncombined_chunks_worker(void* argv){
+    ChunkWriteArg* arg=(ChunkWriteArg*)argv;
+    uint8_t buf[2];
+    int f_pos=arg->cumulative_len + arg->info->offset;
+    if(arg->chunk_len==2){
+        if(arg->info->next_count==0){ // does not overlap with the next chunk
+            buf[0]=arg->chunk[0];
+            buf[1]=arg->chunk[1]+arg->info->prev_count;
+            pwrite(arg->fd, buf, sizeof(buf), f_pos);
+        }
+    } else{
+        buf[0]=arg->chunk[0];
+        buf[1]=arg->chunk[1]+arg->info->prev_count;
+        pwrite(arg->fd, buf, sizeof(buf), f_pos);
+        if(arg->info->next_count){
+            if(arg->chunk_len>4)
+                pwrite(arg->fd, arg->chunk+2, arg->chunk_len-4, f_pos+2);
+        }
+        else
+            pwrite(arg->fd, arg->chunk+2, arg->chunk_len-2, f_pos+2);
+    }
+    sem_post(arg->sem);
+}
+
+/// @brief write uncombined encoded chunks to a file descriptor using multiple threads. thread count=chunk_len
+void encode_write_uncombined_chunks_multithread(int fd, uint8_t*const* chunks, const int* chunk_lens, const int chunk_len){
+    // calculate the offset of each chunk to write in the file
+    ChunkWriteInfo* chunk_infos=get_chunk_infos(chunks, chunk_lens, chunk_len);
+    // reserve enough space to write the encoded chunks
+    int file_size=sum_of_array(chunk_lens, chunk_len)+chunk_infos[chunk_len-1].offset;
+    ftruncate(fd, file_size);
+    // init sem
+    sem_t* sem_tasks_done=(sem_t*)malloc(sizeof(sem_t));
+    sem_init(sem_tasks_done, 0, 0);
+    // write using multithread
+    int num_batches=chunk_len;
+    // init args
+    ChunkWriteArg* args=(ChunkWriteArg*)malloc(sizeof(ChunkWriteArg)*num_batches);
+    scheduler_begin_push_batch();
+    for(int i=0;i<num_batches;++i){
+        args[i].chunk=chunks[i];
+        args[i].chunk_len=chunk_lens[i];
+        args[i].fd=fd;
+        args[i].info=&chunk_infos[i];
+        args[i].sem=sem_tasks_done;
+        if(i==0)
+            args[i].cumulative_len=0;
+        else
+            args[i].cumulative_len=args[i-1].cumulative_len+chunk_lens[i-1];
+        scheduler_job_push(encode_write_uncombined_chunks_worker, &args[i]);
+    }
+    scheduler_end_push_batch();
+    // wait for a jobs to complete
+    for(int i=0;i<num_batches;++i)
+        sem_wait(sem_tasks_done);
+
+    free(chunk_infos);
+    free(args);
+    sem_destroy(sem_tasks_done);
 }

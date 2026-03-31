@@ -11,3 +11,4 @@ void encode_multithread(const uint8_t* chunk, const int size, uint8_t*** out_enc
 void encode_multithread_combine_fixed_batch_size(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size, int batch_size);
 
 void encode_write_uncombined_chunks(int fd, uint8_t*const* chunks, const int* chunk_lens, const int chunk_len);
+void encode_write_uncombined_chunks_multithread(int fd, uint8_t*const* chunks, const int* chunk_lens, const int chunk_len);
