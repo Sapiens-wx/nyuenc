@@ -204,6 +204,7 @@ void encode_multithread_combine_fixed_batch_size(const uint8_t* chunk, const int
 }
 
 void encode_write_uncombined_chunks(int fd, uint8_t*const* chunks, const int* chunk_lens, const int chunk_len){
+    ssize_t write_ret=0;
     uint8_t prev[2]={0,0};
     for(int i=0;i<chunk_len;++i){
         const int len=chunk_lens[i];
@@ -217,26 +218,28 @@ void encode_write_uncombined_chunks(int fd, uint8_t*const* chunks, const int* ch
         // and does nothing
         if(len==2){
             if(prev[0]!=chunk[0] && prev[1]>0)
-                write(fd, prev, sizeof(prev));
+                write_ret = write(fd, prev, sizeof(prev));
             prev[0]=chunk[0];
             prev[1]=chunk[1];
         } else{
             // else write(prev)
             if(prev[1]>0)
-                write(fd, prev, sizeof(prev));
+                write_ret = write(fd, prev, sizeof(prev));
             // write the chunk[0], chunk[1]
             if(prev[0]!=chunk[0])
-                write(fd, chunk, 2);
+                write_ret = write(fd, chunk, 2);
             // if len>4, write the middle chunk (chunk+2, chunk+len-2)
             if(len>4)
-                write(fd, chunk+2, len-4);
+                write_ret = write(fd, chunk+2, len-4);
             // if len>2, set prev to the last two bits of the chunk
             prev[0]=chunk[len-2];
             prev[1]=chunk[len-1];
         }
     }
     if(prev[1]>0)
-        write(fd, prev, sizeof(prev));
+        write_ret = write(fd, prev, sizeof(prev));
+    if(write_ret==-1)
+        perror("error using write()");
 }
 
 typedef struct ChunkWriteInfo{
@@ -270,7 +273,7 @@ static void chunk_info_init(uint8_t*const* chunks, const int* chunk_lens, const 
     }
 }
 static ChunkWriteInfo* get_chunk_infos(uint8_t*const* chunks, const int* chunk_lens, const int chunk_len){
-    ChunkWriteInfo* chunk_infos=(ChunkWriteInfo*)malloc(sizeof(ChunkWriteInfo)*chunk_len);
+    ChunkWriteInfo* chunk_infos=(ChunkWriteInfo*)calloc(chunk_len, sizeof(ChunkWriteInfo));
     for(int i=0;i<chunk_len;++i){
         chunk_info_init(chunks, chunk_lens, chunk_len, i, chunk_infos);
     }
@@ -290,23 +293,26 @@ static void encode_write_uncombined_chunks_worker(void* argv){
     ChunkWriteArg* arg=(ChunkWriteArg*)argv;
     uint8_t buf[2];
     int f_pos=arg->cumulative_len + arg->info->offset;
+    ssize_t pwrite_ret=0;
     if(arg->chunk_len==2){
         if(arg->info->next_count==0){ // does not overlap with the next chunk
             buf[0]=arg->chunk[0];
             buf[1]=arg->chunk[1]+arg->info->prev_count;
-            pwrite(arg->fd, buf, sizeof(buf), f_pos);
+            pwrite_ret = pwrite(arg->fd, buf, sizeof(buf), f_pos);
         }
     } else{
         buf[0]=arg->chunk[0];
         buf[1]=arg->chunk[1]+arg->info->prev_count;
-        pwrite(arg->fd, buf, sizeof(buf), f_pos);
+        pwrite_ret = pwrite(arg->fd, buf, sizeof(buf), f_pos);
         if(arg->info->next_count){
             if(arg->chunk_len>4)
-                pwrite(arg->fd, arg->chunk+2, arg->chunk_len-4, f_pos+2);
+                pwrite_ret = pwrite(arg->fd, arg->chunk+2, arg->chunk_len-4, f_pos+2);
         }
         else
-            pwrite(arg->fd, arg->chunk+2, arg->chunk_len-2, f_pos+2);
+            pwrite_ret = pwrite(arg->fd, arg->chunk+2, arg->chunk_len-2, f_pos+2);
     }
+    if(pwrite_ret==-1)
+        perror("error using pwrite");
     sem_post(arg->sem);
 }
 
@@ -316,7 +322,9 @@ void encode_write_uncombined_chunks_multithread(int fd, uint8_t*const* chunks, c
     ChunkWriteInfo* chunk_infos=get_chunk_infos(chunks, chunk_lens, chunk_len);
     // reserve enough space to write the encoded chunks
     int file_size=sum_of_array(chunk_lens, chunk_len)+chunk_infos[chunk_len-1].offset;
-    ftruncate(fd, file_size);
+    ssize_t ftrunc_ret = ftruncate(fd, file_size);
+    if(ftrunc_ret==-1)
+        perror("error using ftrunc_ret");
     // init sem
     sem_t* sem_tasks_done=(sem_t*)malloc(sizeof(sem_t));
     sem_init(sem_tasks_done, 0, 0);

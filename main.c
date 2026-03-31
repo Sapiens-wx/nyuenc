@@ -6,7 +6,6 @@
 #include <string.h>
 #include "encoder.h"
 #include "argparse.h"
-#include "test.h"
 #include "file_reader.h"
 #include "jobs.h"
 
