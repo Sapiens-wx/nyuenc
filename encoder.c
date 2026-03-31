@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include "argparse.h"
@@ -122,7 +123,13 @@ static void encode_multithread_worker(void* arg_void){
     sem_post(arg->sem);
 }
 
-static void encode_batch_multithread(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size, int num_batches){
+/// @brief encode [chunk] with multithread
+/// @param chunk the data to encode
+/// @param size size of the data to encode
+/// @param out_encoded pointer to a 2D array, containing all the encoded chunks
+/// @param out_size pointer to an array, containing the size of each chunk in [*out_encoded]
+/// @param num_batches number of batches
+static void encode_batch_multithread(const uint8_t* chunk, const int size, uint8_t*** out_encoded, int** out_size, int num_batches){
     int batch_size=size/num_batches;
 
     uint8_t** out_encoded_chunks=(uint8_t**)malloc(sizeof(uint8_t*)*num_batches);
@@ -148,28 +155,85 @@ static void encode_batch_multithread(const uint8_t* chunk, const int size, uint8
     for(int i=0;i<num_batches;++i)
         sem_wait(sem_tasks_done);
 
-    uint8_t* encoded;
-    int encoded_size;
-    encode_combine_encoded_chunks(out_encoded_chunks, out_encoded_chunk_len, num_batches, &encoded, &encoded_size);
-    *out_encoded=encoded;
-    *out_size=encoded_size;
+    *out_encoded=out_encoded_chunks;
+    *out_size=out_encoded_chunk_len;
 
     // free resources
     free(args);
-    for(int i=0;i<num_batches;++i)
-        free(out_encoded_chunks[i]);
-    free(out_encoded_chunks);
-    free(out_encoded_chunk_len);
     sem_destroy(sem_tasks_done);
     free(sem_tasks_done);
+
 }
 
-void encode_multithread(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size){
+/// @brief encode [chunk] with multithread
+/// @param chunk the data to encode
+/// @param size size of the data to encode
+/// @param out_encoded pointer to a buffer, containing the encoded chunk
+/// @param out_size pointer to an integer, containing the size of the encoded chunk
+/// @param num_batches number of batches
+static void encode_batch_multithread_combine(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size, int num_batches){
+    uint8_t** encoded_chunks;
+    int* encoded_chunk_len;
+    encode_batch_multithread(chunk, size, &encoded_chunks, &encoded_chunk_len, num_batches);
+    encode_combine_encoded_chunks(encoded_chunks, encoded_chunk_len, num_batches, out_encoded, out_size);
+    free(encoded_chunks);
+    free(encoded_chunk_len);
+}
+
+void encode_multithread_combine(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size){
     int num_batches=argument.jobs;
-    encode_batch_multithread(chunk, size, out_encoded, out_size, num_batches);
+    encode_batch_multithread_combine(chunk, size, out_encoded, out_size, num_batches);
 }
 
-void encode_multithread_fixed_batch_size(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size, int batch_size){
+/// @brief encode [chunk] with multithread
+/// @param chunk the data to encode
+/// @param size size of the data to encode
+/// @param out_encoded pointer to a 2D array, containing all the encoded chunks
+/// @param out_encoded_lens pointer to an array, containing the size of each chunk in [*out_encoded]
+/// @param out_encoded_len length of the 2D array
+void encode_multithread(const uint8_t* chunk, const int size, uint8_t*** out_encoded, int** out_encoded_lens, int* out_encoded_len){
+    int num_batches=argument.jobs;
+    encode_batch_multithread(chunk, size, out_encoded, out_encoded_lens, num_batches);
+    *out_encoded_len=num_batches;
+}
+
+void encode_multithread_combine_fixed_batch_size(const uint8_t* chunk, const int size, uint8_t** out_encoded, int* out_size, int batch_size){
     int num_batches=(size+batch_size-1)/batch_size;
-    encode_batch_multithread(chunk, size, out_encoded, out_size, num_batches);
+    encode_batch_multithread_combine(chunk, size, out_encoded, out_size, num_batches);
+}
+
+void encode_write_uncombined_chunks(int fd, uint8_t*const* chunks, const int* chunk_lens, const int chunk_len){
+    uint8_t prev[2]={0,0};
+    for(int i=0;i<chunk_len;++i){
+        const int len=chunk_lens[i];
+        if(len<=0) continue; // len==0
+        const uint8_t* chunk=chunks[i];
+        // merge with previous chunk
+        if(prev[0]==chunk[0]){
+            prev[1]+=chunk[1];
+        }
+        // if len==2, then continue merging with the next chunk
+        // and does nothing
+        if(len==2){
+            if(prev[0]!=chunk[0] && prev[1]>0)
+                write(fd, prev, sizeof(prev));
+            prev[0]=chunk[0];
+            prev[1]=chunk[1];
+        } else{
+            // else write(prev)
+            if(prev[1]>0)
+                write(fd, prev, sizeof(prev));
+            // write the chunk[0], chunk[1]
+            if(prev[0]!=chunk[0])
+                write(fd, chunk, 2);
+            // if len>4, write the middle chunk (chunk+2, chunk+len-2)
+            if(len>4)
+                write(fd, chunk+2, len-4);
+            // if len>2, set prev to the last two bits of the chunk
+            prev[0]=chunk[len-2];
+            prev[1]=chunk[len-1];
+        }
+    }
+    if(prev[1]>0)
+        write(fd, prev, sizeof(prev));
 }

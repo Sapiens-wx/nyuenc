@@ -27,13 +27,14 @@ int main(int argc, char* argv[]){
 
 	if(buffer!=NULL){
 		// encode
-		uint8_t* encoded;
-		int encoded_size;
-		encode_multithread(buffer, (int)buffer_size, &encoded, &encoded_size);
+		uint8_t** encoded;
+		int encoded_len;
+		int* encoded_lens;
+		encode_multithread(buffer, (int)buffer_size, &encoded, &encoded_lens, &encoded_len);
 		//encode_multithread_fixed_batch_size(buffer, (int)buffer_size, &encoded, &encoded_size, 1024);
 
 		// writes to stdout
-		write(STDOUT_FILENO, encoded, encoded_size);
+		encode_write_uncombined_chunks(STDOUT_FILENO, encoded, encoded_lens, encoded_len);
 	}
 
 	scheduler_destroy();
