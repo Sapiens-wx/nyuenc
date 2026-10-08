@@ -33,7 +33,7 @@ int main(int argc, char* argv[]){
 		//encode_multithread_fixed_batch_size(buffer, (int)buffer_size, &encoded, &encoded_size, 1024);
 
 		// writes to stdout
-		encode_write_uncombined_chunks_multithread(STDOUT_FILENO, encoded, encoded_lens, encoded_len);
+		encode_write_uncombined_chunks(STDOUT_FILENO, encoded, encoded_lens, encoded_len);
 	}
 
 	scheduler_destroy();
